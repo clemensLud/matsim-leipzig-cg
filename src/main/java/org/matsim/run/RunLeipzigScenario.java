@@ -290,18 +290,20 @@ public class RunLeipzigScenario extends MATSimApplication {
         controler.addOverridingModule(new IntermodalTripFareCompensatorsModule());
 
         //for intermodality between pt and drt the following modules have to be installed and configured
-        String artificialPtMode = "pt_w_drt_allowed";
+        String intermodalPtRoutingMode = "pt_w_drt_allowed";
+		String srrPersonFilterAttributeDrtAllowed = "canUseDrt";
+		String srrPersonFilterValueDrtAllowed = "true";
         PtIntermodalRoutingModesConfigGroup ptIntermodalRoutingModesConfig = ConfigUtils.addOrGetModule(config, PtIntermodalRoutingModesConfigGroup.class);
         PtIntermodalRoutingModesConfigGroup.PtIntermodalRoutingModeParameterSet ptIntermodalRoutingModesParamSet
                 = new PtIntermodalRoutingModesConfigGroup.PtIntermodalRoutingModeParameterSet();
 
         ptIntermodalRoutingModesParamSet.setDelegateMode(TransportMode.pt);
-        ptIntermodalRoutingModesParamSet.setRoutingMode(artificialPtMode);
+        ptIntermodalRoutingModesParamSet.setRoutingMode(intermodalPtRoutingMode);
 
         PtIntermodalRoutingModesConfigGroup.PersonAttribute2ValuePair personAttrParamSet
                 = new PtIntermodalRoutingModesConfigGroup.PersonAttribute2ValuePair();
-        personAttrParamSet.setPersonFilterAttribute("canUseDrt");
-        personAttrParamSet.setPersonFilterValue("true");
+        personAttrParamSet.setPersonFilterAttribute(srrPersonFilterAttributeDrtAllowed);
+        personAttrParamSet.setPersonFilterValue(srrPersonFilterValueDrtAllowed);
         ptIntermodalRoutingModesParamSet.addPersonAttribute2ValuePair(personAttrParamSet);
 
         ptIntermodalRoutingModesConfig.addParameterSet(ptIntermodalRoutingModesParamSet);
@@ -312,8 +314,8 @@ public class RunLeipzigScenario extends MATSimApplication {
         SwissRailRaptorConfigGroup ptConfig = ConfigUtils.addOrGetModule(config, SwissRailRaptorConfigGroup.class);
         for( SwissRailRaptorConfigGroup.IntermodalAccessEgressParameterSet paramSet : ptConfig.getIntermodalAccessEgressParameterSets() ) {
             if(paramSet.getMode().contains("drt")) {
-                paramSet.setPersonFilterAttribute("canUseDrt");
-                paramSet.setPersonFilterValue("true");
+                paramSet.setPersonFilterAttribute(srrPersonFilterAttributeDrtAllowed);
+                paramSet.setPersonFilterValue(srrPersonFilterValueDrtAllowed);
             }
         }
 
@@ -328,7 +330,7 @@ public class RunLeipzigScenario extends MATSimApplication {
         SubtourModeChoiceConfigGroup modeChoiceConfigGroup = ConfigUtils.addOrGetModule(config, SubtourModeChoiceConfigGroup.class);
 		List<String> modes = new ArrayList<>();
 		Collections.addAll(modes, modeChoiceConfigGroup.getModes());
-        modes.add(artificialPtMode);
+        modes.add(intermodalPtRoutingMode);
         modeChoiceConfigGroup.setModes(modes.toArray(new String[modes.size()]));
     }
 }
