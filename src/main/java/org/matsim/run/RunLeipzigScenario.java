@@ -11,6 +11,8 @@ import ch.sbb.matsim.routing.pt.raptor.RaptorIntermodalAccessEgress;
 import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
+import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
@@ -39,6 +41,16 @@ import org.matsim.contrib.drt.run.MultiModeDrtModule;
 import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
 import org.matsim.contrib.dvrp.run.DvrpModule;
 import org.matsim.contrib.dvrp.run.DvrpQSimComponents;
+import org.matsim.contrib.multimodal.router.util.WalkTravelTime;
+import org.matsim.contrib.parking.parkingchoice.PC2.GeneralParkingModule;
+import org.matsim.contrib.parking.parkingchoice.PC2.infrastructure.PC2Parking;
+import org.matsim.contrib.parking.parkingchoice.PC2.infrastructure.PublicParking;
+import org.matsim.contrib.parking.parkingchoice.PC2.scoring.ParkingScore;
+import org.matsim.contrib.parking.parkingchoice.PC2.scoring.ParkingScoreManager;
+import org.matsim.contrib.parking.parkingchoice.PC2.simulation.ParkingInfrastructure;
+import org.matsim.contrib.parking.parkingchoice.PC2.simulation.ParkingInfrastructureManager;
+import org.matsim.contrib.parking.parkingchoice.example.ParkingBetaExample;
+import org.matsim.contrib.parking.parkingchoice.example.ParkingCostCalculatorExample;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup;
@@ -61,6 +73,7 @@ import org.matsim.extensions.pt.routing.EnhancedRaptorIntermodalAccessEgress;
 import org.matsim.extensions.pt.routing.ptRoutingModes.PtIntermodalRoutingModesConfigGroup;
 import org.matsim.extensions.pt.routing.ptRoutingModes.PtIntermodalRoutingModesModule;
 import org.matsim.run.prepare.FixNetwork;
+import org.matsim.run.prepare.LeipzigParkings;
 import org.matsim.run.prepare.PrepareNetwork;
 import org.matsim.run.prepare.PreparePopulation;
 import picocli.CommandLine;
@@ -99,6 +112,9 @@ public class RunLeipzigScenario extends MATSimApplication {
 
 	@CommandLine.Option(names = "--income-dependent", defaultValue = "true", description = "Income dependent scoring", negatable = true)
 	private boolean incomeDependent;
+
+	@CommandLine.Option(names = "--parking", description = "path to parking locations csv file")
+	private String parking;
 
 	public RunLeipzigScenario(@Nullable Config config) {
 		super(config);
@@ -272,6 +288,39 @@ public class RunLeipzigScenario extends MATSimApplication {
 
 		if (bike) {
 			Bicycles.addAsOverridingModule(controler);
+		}
+
+		if (parking!=null) {
+			//Here a new version of the parkingScoreManager could be implemented -sm0822
+			ParkingScore leipzigParkingScoreManager = new ParkingScoreManager(new WalkTravelTime(controler.getConfig().plansCalcRoute()), controler.getScenario());
+			//TODO research fitting value
+			leipzigParkingScoreManager.setParkingScoreScalingFactor(1);
+			//TODO research fitting value + implement own ParkingBetaClass
+			leipzigParkingScoreManager.setParkingBetas(new ParkingBetaExample());
+
+			//the following is just copied from RunParkingChoiceExample.class
+			//TODO define own list of public parkings, outsource it to separate class
+			//something like this:
+//			LeipzigParkings leipzigParkings = new LeipzigParkings();
+//			LinkedList<PublicParking> publicParkings = leipzigParkings.getPublicParkings();
+
+			ParkingInfrastructure leipzigParkingInfrastructureManager = new ParkingInfrastructureManager(leipzigParkingScoreManager, controler.getEvents());
+			{
+				//TODO out this into test csv file
+				LinkedList<PublicParking> publicParkings = new LinkedList<PublicParking>();
+				//parking 1: we place this near the workplace
+				publicParkings.add(new PublicParking(Id.create("workPark", PC2Parking.class), 98, new Coord((double) 10000, (double) 0),
+						new ParkingCostCalculatorExample(1), "park"));
+				//parking 2: we place this at home
+				final double x = -25000;
+				publicParkings.add(new PublicParking(Id.create("homePark", PC2Parking.class), 98, new Coord(x, (double) 0),
+						new ParkingCostCalculatorExample(0), "park"));
+				leipzigParkingInfrastructureManager.setPublicParkings(publicParkings);
+			}
+
+			GeneralParkingModule parkingModule = new GeneralParkingModule(controler);
+			parkingModule.setParkingScoreManager(leipzigParkingScoreManager);
+			parkingModule.setParkingInfrastructurManager(leipzigParkingInfrastructureManager);
 		}
 	}
 

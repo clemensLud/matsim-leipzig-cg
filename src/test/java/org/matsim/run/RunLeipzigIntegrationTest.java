@@ -71,4 +71,9 @@ public class RunLeipzigIntegrationTest {
 		MATSimApplication.execute(RunLeipzigScenario.class, config, "run", "--1pct", "--with-drt");
 //		MATSimApplication.execute(RunLeipzigScenario.class, newConfig, "run", "--1pct", "--with-drt");
 	}
+
+	@Test
+	public final void runParkingTest() {
+		//TODO
+	}
 }
