@@ -22,7 +22,7 @@ srv.w.1 = srv.w.raw %>%
   mutate(key = paste0(HHNR, "-", PNR))
 
 srv.p.1 = srv.p.raw %>%
-  select(HHNR, PNR, V_ALTER, E_ALTER_5, GEWICHT_P, V_FUEHR_PKW) %>%
+  select(HHNR, PNR, V_ALTER, E_ALTER_5, GEWICHT_P, V_FUEHR_PKW, V_GESCHLECHT) %>%
   mutate(key = paste0(HHNR, "-", PNR))
 
 no.match = anti_join(srv.p.1, srv.w.1, by = "key") %>% nrow()
@@ -56,6 +56,7 @@ srv.agg.1 = srv.0 %>%
   summarise(
     age = first(V_ALTER),
     age_bin = first(E_ALTER_5),
+    sex = first(V_GESCHLECHT),
     weight = first(GEWICHT_P),
     n_trips_unweight = n()
   ) %>%
@@ -68,9 +69,6 @@ srv.agg.1 = srv.0 %>%
          age_labeled = cut(age, breaks = age.breaks, labels = age.labels)
         ) %>%
   select(-starts_with("V_VM"), n_trips_unweight)
-
-srv.agg.1 %>%
-  group_by()
 
 srv.agg.2 = srv.agg.1 %>%
   group_by(age_labeled, matsim_mode) %>%
@@ -167,7 +165,7 @@ ggplot(srv.cor.2, aes(age, share)) +
 
 savePlotAsJpg(name = "Regression_Age_Ride_Share")
 
-rm(srv.cor.2, predict, model, new)
+rm(srv.cor.2, predict, model, new, srv.cor)
 
 ggplot(filter(srv.agg.plot, matsim_mode != "other"), aes(age_labeled, share, fill = matsim_mode)) +
   
@@ -188,17 +186,20 @@ savePlotAsJpg(name = "Modal_Share_by_age_column")
 srv.1 = srv.0 %>%
   mutate(matsim_mode = cut(V_VM_LAENG, matsim.breaks, matsim.labels, right = F)) %>%
   group_by(key, matsim_mode) %>%
-  mutate(n = n() * GEWICHT_P) %>%
+  mutate(n_unweight = n(),
+         n_weight = n() * GEWICHT_P) %>%
   ungroup() %>%
   group_by(key) %>%
-  mutate(total = n() * GEWICHT_P) %>%
-  filter(!matsim_mode %in% c("none", "other"))
+  mutate(total_weight = n() * GEWICHT_P,
+         total_unweight = n()) %>%
+  filter(!matsim_mode %in% c("none", "other")) %>%
+  transmute(person = key, sex = ifelse(V_GESCHLECHT == 1, "m", "w"), age = V_ALTER, matsim_mode, n_unweight, n_weight, total_unweight, total_weight)
 
-ggplot(srv.1, aes(V_ALTER, n, color = matsim_mode)) +
+ggplot(srv.1, aes(age, n_weight, color = matsim_mode)) +
   
   geom_smooth(se = F) +
   
-  geom_smooth(aes(V_ALTER, total, fill = "Total"), se = F, color = "black", size = 1.5) +
+  geom_smooth(aes(age, total_weight, fill = "Total"), se = F, color = "black", size = 1.5) +
   
   scale_x_continuous(breaks = seq(0,100,20)) +
   
@@ -206,7 +207,34 @@ ggplot(srv.1, aes(V_ALTER, n, color = matsim_mode)) +
   
   theme_bw()
 
-savePlotAsJpg(name = "Smooth_trips_per_day_and_mode_by_age")
+savePlotAsJpg(name = "Smooth_trips_per_day_and_mode_by_age")s
+
+ggplot(srv.1, aes(age, total, color = sex)) +
+  
+  geom_smooth(se = F) +
+  
+  scale_x_continuous(breaks = seq(0,100,20)) +
+  
+  labs(x = "Age in years", y = "Number of trips per day and person", color = "Sex:", fill = "") +
+  
+  theme_bw()
+
+savePlotAsJpg(name = "Smooth_trips_sex_impact")
+
+srv.1.weight.vs = srv.1 %>%
+  pivot_longer(cols = c(total_unweight, total_weight), names_to = "sample", values_to = "total")
+
+ggplot(srv.1.weight.vs, aes(age, total, color = sample)) +
+  
+  geom_smooth(se = F) +
+  
+  scale_x_continuous(breaks = seq(0,100,20)) +
+  
+  labs(x = "Age in years", y = "Number of trips per day and person", color = "Sample:", fill = "") +
+  
+  theme_bw()
+
+savePlotAsJpg(name = "Smooth_trips_weight_impact")
 
 model.ride = lm(n ~ V_ALTER, data = filter(srv.1, matsim_mode == "ride"))
 model.bike = lm(n ~ I(V_ALTER^2), data = filter(srv.1, matsim_mode == "bike"))
@@ -215,7 +243,6 @@ compare.bike = predict(model.bike, data = srv.1, interval = "prediction") %>%
   as.data.frame() %>%
   cbind(filter(srv.1, matsim_mode == "bike")) %>%
   select(key, n, matsim_mode, fit)
-  
 
 #### Modal Share by drivers license ####
 srv.agg.3 = srv.0 %>%
@@ -267,6 +294,22 @@ ggplot(srv.agg.4, aes(age_labeled, share)) +
 
 savePlotAsJpg(name = "Age_distribution_ride_trips")
 
-#TO-DO: Moped etc. untersuchen
-#       Geschlechtereinfluss
+#### Matching Srv modes on Matsim modes ####
 
+srv.modes = srv.agg.1 %>%
+  group_by(srv_mode) %>%
+  summarise(n = n(),
+            matsim_mode = first(matsim_mode)) %>%
+  mutate(share = n / sum(n))
+
+ggplot(srv.modes, aes(srv_mode, n, fill = matsim_mode)) +
+  
+  geom_col() +
+  
+  scale_y_log10() +
+  
+  labs(x = "", y = "Count", fill = "Matsim mode") +
+  
+  theme(axis.text.x = element_text(angle = 90))
+
+savePlotAsJpg(name = "Log10_scaled_Srv_Matsim_modes")
