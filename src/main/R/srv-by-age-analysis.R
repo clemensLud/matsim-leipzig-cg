@@ -7,12 +7,9 @@ savePlotAsJpg <- function(plot = last_plot(), name){
   ggsave(plot = plot, filename = filepath)
 }
 
-
-SRV.H = "C:/Users/ACER/Desktop/Uni/VSP/NaMAV/data/SrV_2018/SrV2018_Einzeldaten_Leipzig_LE_SciUse_H2018.csv"
 SRV.W = "C:/Users/ACER/Desktop/Uni/VSP/NaMAV/data/SrV_2018/SrV2018_Einzeldaten_Leipzig_LE_SciUse_W2018.csv"
 SRV.P = "C:/Users/ACER/Desktop/Uni/VSP/NaMAV/data/SrV_2018/SrV2018_Einzeldaten_Leipzig_LE_SciUse_P2018.csv"
 
-srv.h.raw = read.csv2(SRV.H)
 srv.p.raw = read.csv2(SRV.P)
 srv.w.raw = read.csv2(SRV.W)
 
@@ -25,7 +22,7 @@ srv.w.1 = srv.w.raw %>%
   mutate(key = paste0(HHNR, "-", PNR))
 
 srv.p.1 = srv.p.raw %>%
-  select(HHNR, PNR, V_ALTER, E_ALTER_5, GEWICHT_P) %>%
+  select(HHNR, PNR, V_ALTER, E_ALTER_5, GEWICHT_P, V_FUEHR_PKW) %>%
   mutate(key = paste0(HHNR, "-", PNR))
 
 no.match = anti_join(srv.p.1, srv.w.1, by = "key") %>% nrow()
@@ -34,9 +31,11 @@ print(paste(no.match, "rows can't be matched"))
 srv.0 = srv.p.1 %>% 
   left_join(srv.w.1, by = "key") %>%
   filter(!is.na(HHNR.y)) %>%
-  select(-ends_with(".y")) %>%
   rename("HHNR" = "HHNR.x",
-         "PNR" = "PNR.x")
+         "PNR" = "PNR.x",
+         "PKW_FUEHRERSCHEIN" = "V_FUEHR_PKW") %>%
+  select(-ends_with(".y"))
+  
 
 mode.levels = c("1", "2", "18", "19", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "70", "-10")
 
@@ -69,6 +68,9 @@ srv.agg.1 = srv.0 %>%
          age_labeled = cut(age, breaks = age.breaks, labels = age.labels)
         ) %>%
   select(-starts_with("V_VM"), n_trips_unweight)
+
+srv.agg.1 %>%
+  group_by()
 
 srv.agg.2 = srv.agg.1 %>%
   group_by(age_labeled, matsim_mode) %>%
@@ -180,3 +182,91 @@ ggplot(filter(srv.agg.plot, matsim_mode != "other"), aes(age_labeled, share, fil
   theme(legend.position = "bottom")
 
 savePlotAsJpg(name = "Modal_Share_by_age_column")
+
+
+#### Analysis of trips per day by mode ####
+srv.1 = srv.0 %>%
+  mutate(matsim_mode = cut(V_VM_LAENG, matsim.breaks, matsim.labels, right = F)) %>%
+  group_by(key, matsim_mode) %>%
+  mutate(n = n() * GEWICHT_P) %>%
+  ungroup() %>%
+  group_by(key) %>%
+  mutate(total = n() * GEWICHT_P) %>%
+  filter(!matsim_mode %in% c("none", "other"))
+
+ggplot(srv.1, aes(V_ALTER, n, color = matsim_mode)) +
+  
+  geom_smooth(se = F) +
+  
+  geom_smooth(aes(V_ALTER, total, fill = "Total"), se = F, color = "black", size = 1.5) +
+  
+  scale_x_continuous(breaks = seq(0,100,20)) +
+  
+  labs(x = "Age in years", y = "Number of trips per day and person", color = "Mode:", fill = "") +
+  
+  theme_bw()
+
+savePlotAsJpg(name = "Smooth_trips_per_day_and_mode_by_age")
+
+model.ride = lm(n ~ V_ALTER, data = filter(srv.1, matsim_mode == "ride"))
+model.bike = lm(n ~ I(V_ALTER^2), data = filter(srv.1, matsim_mode == "bike"))
+
+compare.bike = predict(model.bike, data = srv.1, interval = "prediction") %>%
+  as.data.frame() %>%
+  cbind(filter(srv.1, matsim_mode == "bike")) %>%
+  select(key, n, matsim_mode, fit)
+  
+
+#### Modal Share by drivers license ####
+srv.agg.3 = srv.0 %>%
+  mutate(V_VM_LAENG_1 = ifelse(V_VM_LAENG %in% c(18, 19), 2, V_VM_LAENG),
+         matsim_mode = cut(V_VM_LAENG_1, matsim.breaks, matsim.labels, right = F),
+         age_bin = cut(V_ALTER, age.breaks, age.labels),
+         PKW_FUEHRERSCHEIN_clean = ifelse(age_bin == "< 18" & PKW_FUEHRERSCHEIN == -8, 2, PKW_FUEHRERSCHEIN),
+         PKW_FUEHRERSCHEIN_very_clean = ifelse(PKW_FUEHRERSCHEIN_clean == 1, "Drivers License", 
+                                               ifelse(PKW_FUEHRERSCHEIN_clean == 2, "No Drivers License",
+                                                      PKW_FUEHRERSCHEIN_clean))
+        ) %>%
+  group_by(PKW_FUEHRERSCHEIN_very_clean, matsim_mode) %>%
+  summarise(n = n()) %>%
+  mutate(share = n / sum(n)) %>%
+  ungroup() %>%
+  filter(!matsim_mode %in% c("none", "other") & PKW_FUEHRERSCHEIN_very_clean != -8)
+
+ggplot(srv.agg.3, aes(matsim_mode, share, fill = matsim_mode)) +
+  
+  geom_col() +
+  
+  labs(x = "Mode", y = "Modal Share") +
+  
+  facet_wrap(PKW_FUEHRERSCHEIN_very_clean ~ .) +
+  
+  theme_bw() +
+    
+  theme(legend.position = "none")
+
+savePlotAsJpg(name = "Modal_share_by_Driver_License")
+
+srv.agg.4 = srv.agg.1 %>%
+  filter(matsim_mode == "ride") %>%
+  group_by(person) %>%
+  mutate(ride_trips_weight = n() * weight) %>%
+  ungroup() %>%
+  group_by(age_labeled) %>%
+  summarise(total = sum(ride_trips_weight)) %>%
+  mutate(share = total / sum(total)) %>%
+  filter(age_labeled != "Keine Angabe")
+
+ggplot(srv.agg.4, aes(age_labeled, share)) +
+  
+  geom_col(fill = "darkgreen") +
+  
+  labs(x = "Age", y = "Share of total ride trips") +
+  
+  theme_bw()
+
+savePlotAsJpg(name = "Age_distribution_ride_trips")
+
+#TO-DO: Moped etc. untersuchen
+#       Geschlechtereinfluss
+
