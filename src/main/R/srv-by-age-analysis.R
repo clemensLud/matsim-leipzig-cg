@@ -35,6 +35,8 @@ srv.0 = srv.p.1 %>%
          "PNR" = "PNR.x",
          "PKW_FUEHRERSCHEIN" = "V_FUEHR_PKW") %>%
   select(-ends_with(".y"))
+
+write.csv(srv.0, file = "C:/Users/ACER/Desktop/Uni/VSP/matsim-leipzig/output/srv_join.csv")
   
 
 mode.levels = c("1", "2", "18", "19", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "70", "-10")
@@ -186,14 +188,20 @@ savePlotAsJpg(name = "Modal_Share_by_age_column")
 srv.1 = srv.0 %>%
   mutate(matsim_mode = cut(V_VM_LAENG, matsim.breaks, matsim.labels, right = F)) %>%
   group_by(key, matsim_mode) %>%
-  mutate(n_unweight = n(),
-         n_weight = n() * GEWICHT_P) %>%
+  summarise(n_unweight = n(),
+            V_GESCHLECHT = first(V_GESCHLECHT),
+            V_ALTER = first(V_ALTER),
+            GEWICHT_P = first(GEWICHT_P)) %>%
+  mutate(n_weight = n_unweight * GEWICHT_P) %>%
   ungroup() %>%
   group_by(key) %>%
-  mutate(total_weight = n() * GEWICHT_P,
-         total_unweight = n()) %>%
+  mutate(total_weight = sum(n_weight),
+         total_unweight = sum(n_unweight)) %>%
+  ungroup() %>%
   filter(!matsim_mode %in% c("none", "other")) %>%
-  transmute(person = key, sex = ifelse(V_GESCHLECHT == 1, "m", "w"), age = V_ALTER, matsim_mode, n_unweight, n_weight, total_unweight, total_weight)
+  filter(!matsim_mode %in% c("none", "other")) %>%
+  transmute(person = key, sex = ifelse(V_GESCHLECHT == 1, "m", "w"), age = V_ALTER, 
+            matsim_mode, n_unweight, n_weight, total_unweight, total_weight)
 
 ggplot(srv.1, aes(age, n_weight, color = matsim_mode)) +
   
@@ -207,9 +215,9 @@ ggplot(srv.1, aes(age, n_weight, color = matsim_mode)) +
   
   theme_bw()
 
-savePlotAsJpg(name = "Smooth_trips_per_day_and_mode_by_age")s
+savePlotAsJpg(name = "Smooth_trips_per_day_and_mode_by_age")
 
-ggplot(srv.1, aes(age, total, color = sex)) +
+ggplot(srv.1, aes(age, total_weight, color = sex)) +
   
   geom_smooth(se = F) +
   
