@@ -102,13 +102,14 @@ ggplot(srv.agg.plot, aes(mode_fct, share_percent, fill = mode_fct)) +
   scale_y_continuous(breaks = seq(0, 50, 5)) +
   
   labs(x = "Mode",
-       y = "Modal share in percentage") +
+       y = "Modal share in percentage",
+       title = "Modal Share over age groups from SrV Data") +
   
   facet_wrap(. ~ age_labeled) +
   
   theme_bw() +
   
-  theme(legend.position = "none")
+  theme(legend.position = "none", plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Modal_Share_by_Age")
 
@@ -116,9 +117,11 @@ ggplot(filter(srv.agg.plot, mode_fct == "ride"), aes(age_labeled, median_trips, 
   
   geom_col() +
   
-  labs(x = "Age", y = "Median ride trips per person and day", fill = "Share of\nmode 'ride'") +
+  labs(x = "Age", y = "Median ride trips per person and day", fill = "Share of\nmode 'ride'", title = "Mean ride trips in different age groups in SrV 2018") +
   
-  theme_bw()
+  theme_bw() +
+  
+  theme(plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Median_ride_trips")
 
@@ -126,13 +129,14 @@ ggplot(filter(srv.agg.plot, n > 10), aes(x = mode_fct, y = mean_trips, fill = mo
   
   geom_col() +
   
-  labs(x = "Mode", y = "Mean trips per day and person") +
+  labs(x = "Mode", y = "Mean trips per day and person",
+       title = "Mean trips per transport mode over age groups form SrV 2018") +
   
   facet_wrap(. ~ age_labeled) +
   
   theme_bw() +
   
-  theme(legend.position = "none")
+  theme(legend.position = "none", plot.title = element_text(size = 15))
 
 srv.cor = srv.agg.1 %>%
   group_by(age, matsim_mode) %>%
@@ -175,11 +179,11 @@ ggplot(filter(srv.agg.plot, matsim_mode != "other"), aes(age_labeled, share, fil
   
   scale_y_continuous(breaks = seq(0, 0.5, 0.05)) +
   
-  labs(y = "Modal Share by age", x = "Age in years", fill = "Mode") +
+  labs(y = "Modal Share by age", x = "Age in years", fill = "Mode", title = "Modal share over age groups from SrV Data") +
   
   theme_bw() +
   
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Modal_Share_by_age_column")
 
@@ -223,9 +227,12 @@ ggplot(srv.1, aes(age, total_weight, color = sex)) +
   
   scale_x_continuous(breaks = seq(0,100,20)) +
   
-  labs(x = "Age in years", y = "Number of trips per day and person", color = "Sex:", fill = "") +
+  labs(x = "Age in years", y = "Number of trips per day and person", color = "Sex:", fill = "",
+       title = "Trips per day and person by age from SrV Data") +
   
-  theme_bw()
+  theme_bw() +
+  
+  theme(plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Smooth_trips_sex_impact")
 
@@ -272,13 +279,13 @@ ggplot(srv.agg.3, aes(matsim_mode, share, fill = matsim_mode)) +
   
   geom_col() +
   
-  labs(x = "Mode", y = "Modal Share") +
+  labs(x = "Mode", y = "Modal Share", title = "Modal Share by availability of drivers license from SrV Data") +
   
   facet_wrap(PKW_FUEHRERSCHEIN_very_clean ~ .) +
   
   theme_bw() +
     
-  theme(legend.position = "none")
+  theme(legend.position = "none", plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Modal_share_by_Driver_License")
 
@@ -296,9 +303,11 @@ ggplot(srv.agg.4, aes(age_labeled, share)) +
   
   geom_col(fill = "darkgreen") +
   
-  labs(x = "Age", y = "Share of total ride trips") +
+  labs(x = "Age", y = "Share of total ride trips", title = "Share of ride trips over age groups from SrV Data") +
   
-  theme_bw()
+  theme_bw() +
+  
+  theme(plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Age_distribution_ride_trips")
 
