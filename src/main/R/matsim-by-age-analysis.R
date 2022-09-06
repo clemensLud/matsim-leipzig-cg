@@ -44,7 +44,7 @@ trips = filter %>%
   select(-c(subpopulation, starts_with("first_"), good_type, executed_score, end_x, end_y))
 
 
-rm(shp, filter)
+rm(shp, filter, sf)
 
 
 #### Analysis of mode share by age etc. ####
@@ -56,6 +56,10 @@ trips.1 = trips %>%
   mutate(age_bin = cut(age, age.breaks, age.labels, right = F),
          mode_fct = factor(main_mode, levels = c("walk", "bike", "car", "ride", "pt", "drtNorth", "drtSoutheast" )))
 
+trips.1 = trips.1 %>%
+  as.data.frame() %>%
+  select(-geometry)
+
 trips.agg.1 = trips.1 %>%
   filter(!mode_fct %in% c("drtNorth", "drtSoutheast")) %>%
   group_by(age_bin, mode_fct) %>%
@@ -66,11 +70,12 @@ ggplot(trips.agg.1, aes(age_bin, share, fill = mode_fct)) +
   
   geom_col(position = "dodge", color = "black") +
   
-  labs(x = "Age", y = "Modal share", fill = "Main mode") +
+  labs(x = "Age", y = "Modal share", fill = "Main mode", title = "Modal Share over age groups from MATSim Data") +
   
   theme_bw() +
   
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Modal_Share_by_age_column")
 
@@ -86,11 +91,13 @@ ggplot(ride, aes(age_bin, share)) +
   
   geom_col(fill = "darkorange") +
   
-  labs(x = "Age", y = "Share of total ride trips") +
+  labs(x = "Age", y = "Share of total ride trips", title = "Age distribution on ride trips from MATSim Data") +
   
-  theme_bw()
+  theme_bw() +
+  
+  theme(plot.title = element_text(size = 15))
 
-
+savePlotAsJpg(name = "Age_Distribution_Ride")
 #### Number of trips per day and person ####
 
 trips.agg.2 = trips.1 %>%
@@ -160,3 +167,116 @@ ggplot(trips.agg.2, aes(age, total, color = sex)) +
   theme_bw()
   
 savePlotAsJpg(name = "Smooth_trips_sex_impact")
+
+## Compare Age distributions ##
+
+trips.2.1 = trips.1 %>%
+  group_by(age) %>%
+  summarise(count = n()) %>%
+  mutate(src = "MATSim")
+
+trips.2.2 = trips.1 %>%
+  group_by(age_bin) %>%
+  summarise(count = n()) %>%
+  mutate(src = "MATSim")
+
+srv.2 = srv.0 %>%
+  transmute(key, age = V_ALTER, weight = GEWICHT_P) %>%
+  group_by(key) %>%
+  summarise(
+    age = first(age),
+    weight= first(weight)
+  ) %>%
+  mutate(age_bin = cut(age, age.breaks, age.labels),
+         src = "SrV")
+
+srv.2.1 = srv.2 %>%
+  group_by(age) %>%
+  summarise(count = sum(weight),
+            src = first(src))
+
+srv.2.2 = srv.2 %>%
+  group_by(age_bin) %>%
+  summarise(count = sum(weight),
+            src = first(src))
+
+compare.2.1 = bind_rows(srv.2.1, trips.2.1) %>%
+  group_by(src) %>%
+  mutate(share = count / sum(count))
+compare.2.2 = bind_rows(srv.2.2, trips.2.2) %>%
+  group_by(src) %>%
+  mutate(share = count / sum(count)) %>%
+  filter(age_bin != "Keine Angabe")
+
+ggplot(compare.2.1, aes(age, share, fill = src)) +
+  
+  geom_col() +
+  
+  facet_wrap(. ~ src) +
+  
+  labs(y = "Share", x = "Age") +
+  
+  theme_bw() +
+  
+  theme(legend.position = "none")
+  
+savePlotAsJpg(name = "Compare_Age_Distribution")
+
+ggplot(compare.2.2, aes(age_bin, share, fill = src)) +
+  
+  geom_col() +
+  
+  facet_wrap(. ~ src) +
+  
+  labs(y = "Share", x = "Age") +
+  
+  theme_bw() +
+  
+  theme(legend.position = "none")
+
+savePlotAsJpg(name = "Compare_Age_Group_Distribution")
+
+compare.2.1.diff = compare.2.1 %>%
+  select(-count) %>%
+  pivot_wider(names_from = "src", values_from = "share") %>%
+  replace_na(list(SrV = 0)) %>%
+  mutate(diff = MATSim - SrV,
+         neg = ifelse(diff < 0, TRUE, FALSE))
+
+compare.2.2.diff = compare.2.2 %>%
+  select(-count) %>%
+  pivot_wider(names_from = "src", values_from = "share") %>%
+  mutate(diff = MATSim - SrV,
+         neg = ifelse(diff < 0, TRUE, FALSE))
+
+ggplot(compare.2.1.diff, aes(age, diff, fill = neg)) +
+  
+  geom_col() +
+  
+  scale_x_continuous(breaks = seq(0, 100, 10)) +
+  
+  labs(y = "SrV - MATSim", x = "Age", title = "Difference of MATSim age distribution compared to SrV data") +
+  
+  theme_bw() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 15))
+
+savePlotAsJpg(name = "Age_Diff_Plot")
+
+ggplot(compare.2.2.diff, aes(age_bin, diff, fill = neg)) +
+  
+  geom_col() +
+  
+  coord_flip() +
+  
+  labs(y = "SrV - MATSim", x = "Age", title = "Difference of MATSim age group distribution compared to SrV data") +
+  
+  theme_bw() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 15))
+
+savePlotAsJpg(name = "Age_Group_Diff_Plot")
+
+rm(srv.2.1, srv.2.2, trips.2.1, trips.2.2, compare.2.1, compare.2.2, compare.2.1.diff, compare.2.2.diff)
