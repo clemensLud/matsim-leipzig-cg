@@ -44,7 +44,7 @@ trips = filter %>%
   select(-c(subpopulation, starts_with("first_"), good_type, executed_score, end_x, end_y))
 
 
-rm(shp, filter, sf)
+rm(shp, filter, sf, join)
 
 
 #### Analysis of mode share by age etc. ####
@@ -279,7 +279,7 @@ ggplot(compare.2.2.diff, aes(age_bin, diff, fill = neg)) +
 
 savePlotAsJpg(name = "Age_Group_Diff_Plot")
 
-rm(srv.2.1, srv.2.2, trips.2.1, trips.2.2, compare.2.1, compare.2.2, compare.2.1.diff, compare.2.2.diff)
+rm(srv.2.1, srv.2.2, trips.2.1, trips.2.2, compare.2.1, compare.2.2, compare.2.1.diff, compare.2.2.diff, srv.0, srv.1)
 
 #### compare income distribution between matsim and SrV ####
 
@@ -291,14 +291,14 @@ inc.breaks = c(-Inf, 0,1,2,3,4,5)
 inc.labels = c("No Information", "< 500 €", "500 < 1500 €", "1500 < 3600 €", "3600 < 5600 €", "> 5600 €")
 inc.breaks.2 = c(-Inf, 0, 500, 1500, 3600, 5600, Inf)
 
-econ.breaks = c(-Inf, 0,1,2,3,4,5)
-econ.labels = c("No Information", "Sehr niedrig", "Niedrig", "Mittel", "Hoch", "Sehr hoch")
-
 srv.h.1 = srv.h %>%
-  transmute(hh_nr = HHNR, hh_weight = GEWICHT_HH, E_EINK_5, E_OEK_STATUS) %>%
+  transmute(hh_nr = HHNR, hh_weight = GEWICHT_HH, E_EINK_5, E_OEK_STATUS, hh_size = E_HHG) %>%
   mutate(income_bin = cut(E_EINK_5, breaks = inc.breaks, labels = inc.labels),
          src = "SrV") %>%
   select(-starts_with("E_"))
+
+median.hh.size = median(srv.h.1$hh_size)
+mean.hh.size = mean(srv.h.1$hh_size * srv.h.1$hh_weight)
 
 trips.3 = trips.1 %>%
   select(person, income) %>%
@@ -307,6 +307,8 @@ trips.3 = trips.1 %>%
             income = first(income)) %>%
   mutate(income = as.numeric(income),
          income_bin = cut(income, breaks = inc.breaks.2, labels = inc.labels),
+         income_scaled = income * mean.hh.size,
+         income_scaled_bin = cut(income_scaled, breaks = inc.breaks.2, labels = inc.labels),
          src = "MATSim")
 
 trips.3.1 = trips.3 %>%
@@ -316,7 +318,15 @@ trips.3.1 = trips.3 %>%
             src = first(src)) %>%
   mutate(share = count / sum(count))
 
-compare.3 = srv.h.1 %>%
+trips.3.2 = trips.3 %>%
+  select(income_scaled_bin, src) %>%
+  group_by(income_scaled_bin) %>%
+  summarise(count = n(),
+            src = first(src)) %>%
+  mutate(share = count / sum(count)) %>%
+  rename("income_bin" = "income_scaled_bin")
+
+compare.3.1 = srv.h.1 %>%
   select(income_bin, hh_weight, src) %>%
   group_by(income_bin) %>%
   summarise(count = sum(hh_weight),
@@ -330,7 +340,23 @@ compare.3 = srv.h.1 %>%
   rename("share" = "new_share") %>%
   bind_rows(trips.3.1)
 
-ggplot(compare.3, aes(x = income_bin, y = share, fill = src)) +
+compare.3.2 = srv.h.1 %>%
+  select(income_bin, hh_weight, src) %>%
+  group_by(income_bin) %>%
+  summarise(count = sum(hh_weight),
+            src = first(src)) %>%
+  mutate(share = count / sum(count)) %>%
+  filter(income_bin != "No Information") %>%
+  group_by(src) %>%
+  mutate(total = sum(share),
+         new_share = share / total) %>%
+  select(-c(share, total)) %>%
+  rename("share" = "new_share") %>%
+  bind_rows(trips.3.2)
+
+
+### Plots for unscaled matsim income
+ggplot(compare.3.1, aes(x = income_bin, y = share, fill = src)) +
   
   geom_col() +
   
@@ -347,13 +373,13 @@ ggplot(compare.3, aes(x = income_bin, y = share, fill = src)) +
 
 savePlotAsJpg(name = "Income_Distribution")
 
-compare.3.diff = compare.3 %>%
+compare.3.1.diff = compare.3.1 %>%
   select(-count) %>%
   pivot_wider(names_from = src, values_from = share, values_fill = 0.0) %>%
   mutate(diff = MATSim - SrV,
          neg = ifelse(diff < 0, T, F))
 
-ggplot(compare.3.diff, aes(income_bin, diff, fill = neg)) +
+ggplot(compare.3.1.diff, aes(income_bin, diff, fill = neg)) +
   
   geom_col() +
   
@@ -367,3 +393,47 @@ ggplot(compare.3.diff, aes(income_bin, diff, fill = neg)) +
         plot.title = element_text(size = 15))
 
 savePlotAsJpg(name = "Income_Distribution_Diff")
+
+
+### Plots for scaled matsim income
+
+ggplot(compare.3.2, aes(x = income_bin, y = share, fill = src)) +
+  
+  geom_col() +
+  
+  scale_y_continuous(breaks = seq(0, 0.7, 0.1)) +
+  
+  labs(x = "Income Group", y = "Share", title = "Comparsion of scaled MATSim Income distribution and SrV 2018") +
+  
+  facet_wrap(. ~ src) +
+  
+  theme_bw() +
+  
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90),
+        plot.title = element_text(size = 15))
+
+savePlotAsJpg(name = "Income_Distribution_scaled")
+
+compare.3.2.diff = compare.3.2 %>%
+  select(-count) %>%
+  pivot_wider(names_from = src, values_from = share, values_fill = 0.0) %>%
+  mutate(diff = MATSim - SrV,
+         neg = ifelse(diff < 0, T, F))
+
+ggplot(compare.3.2.diff, aes(income_bin, diff, fill = neg)) +
+  
+  geom_col() +
+  
+  coord_flip() +
+  
+  labs(y = "MATSim - SrV", x = "Income Group", title = "Difference of scaled MATSim income distribution compared to SrV 2018") +
+  
+  theme_bw() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 15))
+
+savePlotAsJpg(name = "Income_Distribution_Diff")
+
+rm(compare.3.1.diff, compare.3.2.diff, compare.3.1, compare.3.2, trips.3.1, trips.3.2)
