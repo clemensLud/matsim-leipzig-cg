@@ -107,7 +107,7 @@ public class RunLeipzigScenario extends MATSimApplication {
 	private boolean incomeDependent;
 
 	@CommandLine.ArgGroup(heading = "%nNetwork options%n", exclusive = false, multiplicity = "0..1")
-	private NetworkOptions network;
+	private NetworkOptions network = new NetworkOptions();
 
 	public RunLeipzigScenario(@Nullable Config config) {
 		super(config);
