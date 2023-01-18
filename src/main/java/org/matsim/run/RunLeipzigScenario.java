@@ -10,11 +10,9 @@ import com.google.inject.TypeLiteral;
 import com.google.inject.multibindings.Multibinder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.matsim.analysis.DrtServiceQualityAnalysis;
-import org.matsim.analysis.DrtVehiclesRoadUsageAnalysis;
-import org.matsim.analysis.LeipzigMainModeIdentifier;
-import org.matsim.analysis.ModeChoiceCoverageControlerListener;
+import org.matsim.analysis.*;
 import org.matsim.analysis.emissions.RunOfflineAirPollutionAnalysisByVehicleCategory;
+import org.matsim.analysis.traffic.VehicleKilometerAnalysis;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
@@ -49,6 +47,7 @@ import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.*;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
+import org.matsim.core.controler.OutputDirectoryHierarchy;
 import org.matsim.core.replanning.choosers.ForceInnovationStrategyChooser;
 import org.matsim.core.replanning.choosers.StrategyChooser;
 import org.matsim.core.replanning.strategies.DefaultPlanStrategiesModule;
@@ -64,10 +63,8 @@ import org.matsim.extensions.pt.routing.ptRoutingModes.PtIntermodalRoutingModesM
 import org.matsim.optDRT.MultiModeOptDrtConfigGroup;
 import org.matsim.optDRT.OptDrt;
 import org.matsim.optDRT.OptDrtConfigGroup;
-import org.matsim.run.prepare.FixNetwork;
-import org.matsim.run.prepare.NetworkOptions;
-import org.matsim.run.prepare.PrepareNetwork;
-import org.matsim.run.prepare.PreparePopulation;
+import org.matsim.run.prepare.*;
+import org.matsim.run.prepare.counts.CreateCountsFromBAStData;
 import picocli.CommandLine;
 import playground.vsp.scoring.IncomeDependentUtilityOfMoneyPersonScoringParameters;
 
@@ -80,10 +77,10 @@ import java.util.*;
 		CreateNetworkFromSumo.class, CreateTransitScheduleFromGtfs.class, TrajectoryToPlans.class, GenerateShortDistanceTrips.class,
 		MergePopulations.class, ExtractRelevantFreightTrips.class, DownSamplePopulation.class, PrepareNetwork.class, CleanNetwork.class,
 		CreateLandUseShp.class, ResolveGridCoordinates.class, PreparePopulation.class, CleanPopulation.class, AdjustActivityToLinkDistances.class,
-		FixSubtourModes.class, FixNetwork.class
+		FixSubtourModes.class, FixNetwork.class, CreatingCountsFromZaehldaten.class, CreateCountsFromBAStData.class
 })
 @MATSimApplication.Analysis({
-		CheckPopulation.class, TravelTimeAnalysis.class, LinkStats.class, SubTourAnalysis.class, DrtServiceQualityAnalysis.class, DrtVehiclesRoadUsageAnalysis.class
+		CheckPopulation.class, TravelTimeAnalysis.class, LinkStats.class, SubTourAnalysis.class, DrtServiceQualityAnalysis.class, DrtVehiclesRoadUsageAnalysis.class, VehicleKilometerAnalysis.class
 })
 public class RunLeipzigScenario extends MATSimApplication {
 
@@ -151,6 +148,12 @@ public class RunLeipzigScenario extends MATSimApplication {
 
 		config.planCalcScore().addActivityParams(new PlanCalcScoreConfigGroup.ActivityParams("freight_start").setTypicalDuration(60 * 15));
 		config.planCalcScore().addActivityParams(new PlanCalcScoreConfigGroup.ActivityParams("freight_end").setTypicalDuration(60 * 15));
+
+		config.planCalcScore().addActivityParams(new PlanCalcScoreConfigGroup.ActivityParams("start").setTypicalDuration(60 * 15));
+		config.planCalcScore().addActivityParams(new PlanCalcScoreConfigGroup.ActivityParams("end").setTypicalDuration(60 * 15));
+		config.planCalcScore().addActivityParams(new PlanCalcScoreConfigGroup.ActivityParams("service").setTypicalDuration(60 * 15));
+
+		config.controler().setOverwriteFileSetting(OutputDirectoryHierarchy.OverwriteFileSetting.overwriteExistingFiles);
 
 		if (sample.isSet()) {
 			config.controler().setOutputDirectory(sample.adjustName(config.controler().getOutputDirectory()));
