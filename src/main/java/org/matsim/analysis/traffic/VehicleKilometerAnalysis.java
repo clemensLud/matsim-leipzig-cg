@@ -1,5 +1,7 @@
 package org.matsim.analysis.traffic;
 
+import it.unimi.dsi.fastutil.objects.Object2DoubleMap;
+import it.unimi.dsi.fastutil.objects.Object2DoubleOpenHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Coord;
@@ -14,6 +16,9 @@ import org.matsim.application.options.CrsOptions;
 import org.matsim.application.options.ShpOptions;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.population.algorithms.ParallelPersonAlgorithmUtils;
+import org.matsim.core.population.algorithms.PersonAlgorithm;
+import org.matsim.core.population.routes.NetworkRoute;
 import org.matsim.core.router.TripStructureUtils;
 import picocli.CommandLine;
 
@@ -23,122 +28,141 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.DoubleAdder;
 import java.util.function.Predicate;
 
 @CommandLine.Command(
-        name = "vehicle-km",
-        description = "Analyze road usage by person and freight vehicles"
+		name = "vehicle-km",
+		description = "Analyze road usage by person and freight vehicles"
 )
-public class VehicleKilometerAnalysis implements MATSimAppCommand {
+public class VehicleKilometerAnalysis implements MATSimAppCommand, PersonAlgorithm {
 
-    @CommandLine.Option(names = "--network", description = "path to scenario network", required = true)
-    private static Path network;
+	private static final Set<String> IGNORED_MODES = Set.of(TransportMode.walk, TransportMode.bike, TransportMode.pt, TransportMode.drt);
 
-    @CommandLine.Option(names = "--plans", description = "path to output plans file", required = true)
-    private static Path plans;
+	private static final Logger log = LogManager.getLogger(VehicleKilometerAnalysis.class);
 
-    @CommandLine.Option(names = "--subpopulations", description = "List of subpopulations")
-    List<String> subpopulations = List.of("businessTraffic_withMC", "businessTraffic_noMC", "person", "freight", "freightTraffic_noMC");
+	@CommandLine.Option(names = "--network", description = "path to scenario network", required = true)
+	private static Path network;
 
-    @CommandLine.Option(names = "--output", description = "output *.csv filepath", defaultValue = "vehicle-kilometers-by-subpopulation.csv")
-    private static Path output;
+	@CommandLine.Option(names = "--plans", description = "path to output plans file", required = true)
+	private static Path plans;
 
-    @CommandLine.Mixin
-    ShpOptions shp = new ShpOptions();
+	@CommandLine.Option(names = "--subpopulations", description = "List of subpopulations")
+	private List<String> subpopulations = List.of("businessTraffic_withMC", "businessTraffic_noMC", "person", "freight", "freightTraffic_noMC");
 
-    @CommandLine.Mixin
-    CrsOptions crs = new CrsOptions();
+	@CommandLine.Option(names = "--output", description = "output *.csv filepath", defaultValue = "vehicle-kilometers-by-subpopulation.csv")
+	private static Path output;
 
-    private final HashMap<String, Double> vehicleKilometeres = new HashMap<>();
+	@CommandLine.Mixin
+	private ShpOptions shp = new ShpOptions();
 
-    private static final Logger log = LogManager.getLogger(VehicleKilometerAnalysis.class);
+	@CommandLine.Mixin
+	private CrsOptions crs = new CrsOptions();
 
-    public static void main(String[] args) {
-        new VehicleKilometerAnalysis().execute(args);
-    }
+	private final Map<String, DoubleAdder> vehicleKilometeres = new ConcurrentHashMap<>();
 
-    @Override
-    public Integer call() throws Exception {
+	private Predicate<Link> filter;
+	private final AtomicInteger counter = new AtomicInteger(0);
 
-        subpopulations.forEach(s -> vehicleKilometeres.put(s, 0.0));
-        List<String> ignoredModes = List.of(TransportMode.walk, TransportMode.bike, TransportMode.pt, TransportMode.drt);
-        Map<Id<Link>, ? extends Link> links = NetworkUtils.readNetwork(network.toString()).getLinks();
-        Population population = PopulationUtils.readPopulation(plans.toString());
+	private Map<Id<Link>, ? extends Link> links;
 
-        final Predicate<Link> filter;
-        if(shp.isDefined()){
-            ShpOptions.Index index = shp.createIndex(crs.getTargetCRS(), "_");
+	public static void main(String[] args) {
+		new VehicleKilometerAnalysis().execute(args);
+	}
 
-            filter = link -> {
-                if (link == null)
-                    return false;
+	@Override
+	public Integer call() throws Exception {
 
-                Coord from = link.getFromNode().getCoord();
-                Coord to = link.getToNode().getCoord();
-                return index.contains(from) && index.contains(to);
-            };
-        } else {
-            filter = link -> true;
-        }
+		links = NetworkUtils.readNetwork(network.toString()).getLinks();
+		Population population = PopulationUtils.readPopulation(plans.toString());
 
-        int counter = 0;
+		if (shp.isDefined()) {
+			ShpOptions.Index index = shp.createIndex(crs.getTargetCRS(), "_");
 
-        log.info("Begin population analysis.");
-        for (var person : population.getPersons().values()) {
+			filter = link -> {
+				Coord from = link.getFromNode().getCoord();
+				Coord to = link.getToNode().getCoord();
+				return index.contains(from) && index.contains(to);
+			};
+		} else {
+			filter = link -> true;
+		}
 
-            if (!isPersonOfInterest(person))
-                continue;
 
-            Plan selectedPlan = person.getSelectedPlan();
-            String subpopulation = (String) person.getAttributes().getAttribute("subpopulation");
+		log.info("Begin population analysis.");
 
-            for (var leg : TripStructureUtils.getLegs(selectedPlan)) {
+		ParallelPersonAlgorithmUtils.run(population, Runtime.getRuntime().availableProcessors(), this);
 
-                if(ignoredModes.contains(leg.getMode()))
-                    continue;
 
-                String description = leg.getRoute().getRouteDescription();
-                Optional<Double> vkm = Arrays.stream(description.split(" "))
-                        .map(string -> Id.create(string, Link.class))
-                        .map(id -> {
-                            Link link = links.get(id);
-                            if(link == null)
-                                log.info("Can't find a link for id {}", id.toString());
-                            return link;
-                        })
-                        .filter(filter)
-                        .map(Link::getLength)
-                        .reduce(Double::sum);
+		log.info("Write results to {}", output.toString());
 
-                if(counter++ % 10000 == 0)
-                    log.info("Processed trips: {}", counter);
+		printToFile(vehicleKilometeres, output.toString());
 
-                vkm.ifPresent(aDouble -> vehicleKilometeres.merge(subpopulation, aDouble / 1000, Double::sum));
-            }
-        }
+		return 0;
+	}
 
-        log.info("Write results to {}", output.toString());
-        printToFile(vehicleKilometeres, output.toString());
+	@Override
+	public void run(Person person) {
 
-        return 0;
-    }
 
-    private boolean isPersonOfInterest(Person person){
-        String subpopulation = (String) person.getAttributes().getAttribute("subpopulation");
-        return subpopulations.contains(subpopulation);
-    }
+		if (!isPersonOfInterest(person))
+			return;
 
-    private void printToFile(Map<String, Double> map, String filepath) {
+		Plan selectedPlan = person.getSelectedPlan();
+		String subpopulation = (String) person.getAttributes().getAttribute("subpopulation");
 
-        try (PrintWriter pWriter = new PrintWriter(new BufferedWriter(new FileWriter(filepath)))){
+		// maps leg mode to distances
+		Object2DoubleMap<String> sums = new Object2DoubleOpenHashMap<>();
 
-            for(Map.Entry<String, Double> entry: map.entrySet()){
-                String line = entry.getKey() + ";" + entry.getValue().toString();
-                pWriter.println(line);
-            }
+		for (var leg : TripStructureUtils.getLegs(selectedPlan)) {
 
-        } catch (IOException e){
-            e.printStackTrace();
-        }
-    }
+			if (IGNORED_MODES.contains(leg.getMode()))
+				continue;
+
+			if (!(leg.getRoute() instanceof NetworkRoute nr))
+				continue;
+
+			for (Id<Link> id : nr.getLinkIds()) {
+
+				Link link = links.get(id);
+				if (link == null || !filter.test(link))
+					continue;
+
+				sums.merge(leg.getMode(), link.getLength(), Double::sum);
+			}
+
+			if (counter.incrementAndGet() % 10000 == 0)
+				log.info("Processed trips: {}", counter);
+
+		}
+
+
+		for (Object2DoubleMap.Entry<String> e : sums.object2DoubleEntrySet()) {
+			vehicleKilometeres.computeIfAbsent(subpopulation + ";" + e.getKey(), k -> new DoubleAdder()).add(e.getDoubleValue());
+		}
+
+	}
+
+	private boolean isPersonOfInterest(Person person) {
+		String subpopulation = (String) person.getAttributes().getAttribute("subpopulation");
+		return subpopulations.contains(subpopulation);
+	}
+
+	private void printToFile(Map<String, DoubleAdder> map, String filepath) {
+
+		// TODO: use CSVPrinter
+
+		try (PrintWriter pWriter = new PrintWriter(new BufferedWriter(new FileWriter(filepath)))) {
+
+			for (Map.Entry<String, DoubleAdder> entry : map.entrySet()) {
+				String line = entry.getKey() + ";" + entry.getValue().doubleValue();
+				pWriter.println(line);
+			}
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
 }
