@@ -6,7 +6,7 @@
     </module>
 
     <module name="controler">
-        <param name="lastIteration" value="600"/>
+        <param name="lastIteration" value="1"/>
         <param name="overwriteFiles" value="failIfDirectoryExists"/>
         <param name="runId" value="leipzig-25pct"/>
         <param name="outputDirectory" value="./output/output-leipzig-25pct"/>
@@ -194,4 +194,11 @@
         <!-- maximum beeline distance between stops that agents could transfer to by walking -->
         <param name="maxBeelineWalkConnectionDistance" value="300.0"/>
     </module>
+
+	<module name="planCalcScore">
+		<param name="fractionOfIterationsToStartScoreMSA" value="0.8" />
+	</module>
+	<module name="subtourModeChoice">
+		<param name="behavior" value="fromSpecifiedModesToSpecifiedModes"/>
+	</module>
 </config>

@@ -13,11 +13,12 @@ import org.apache.logging.log4j.Logger;
 import org.matsim.analysis.*;
 import org.matsim.analysis.emissions.RunOfflineAirPollutionAnalysisByVehicleCategory;
 import org.matsim.analysis.personMoney.PersonMoneyEventsAnalysisModule;
+import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
-import org.matsim.api.core.v01.population.Person;
-import org.matsim.api.core.v01.population.Plan;
+import org.matsim.api.core.v01.population.*;
 import org.matsim.application.MATSimAppCommand;
 import org.matsim.application.MATSimApplication;
 import org.matsim.application.analysis.CheckPopulation;
@@ -55,10 +56,12 @@ import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.replanning.choosers.ForceInnovationStrategyChooser;
 import org.matsim.core.replanning.choosers.StrategyChooser;
+import org.matsim.core.replanning.modules.SubtourModeChoice;
 import org.matsim.core.replanning.strategies.DefaultPlanStrategiesModule;
 import org.matsim.core.router.AnalysisMainModeIdentifier;
 import org.matsim.core.router.MultimodalLinkChooser;
 import org.matsim.core.scoring.functions.ScoringParametersForPerson;
+import org.matsim.core.utils.geometry.CoordUtils;
 import org.matsim.core.utils.io.IOUtils;
 import org.matsim.extensions.pt.fare.intermodalTripFareCompensator.IntermodalTripFareCompensatorConfigGroup;
 import org.matsim.extensions.pt.fare.intermodalTripFareCompensator.IntermodalTripFareCompensatorsConfigGroup;
@@ -131,6 +134,7 @@ public class RunLeipzigScenario extends MATSimApplication {
 
 	@CommandLine.ArgGroup(heading = "%nNetwork options%n", exclusive = false, multiplicity = "0..1")
 	private final NetworkOptions network = new NetworkOptions();
+	private PopulationFactory populationfactory;
 
 	public RunLeipzigScenario(@Nullable Config config) {
 		super(config);
@@ -159,7 +163,7 @@ public class RunLeipzigScenario extends MATSimApplication {
 			config.qsim().setStorageCapFactor(sample.getSize() / 100.0);
 		}
 
-		// Comment Hallo config.vspExperimental().setVspDefaultsCheckingLevel(VspExperimentalConfigGroup.VspDefaultsCheckingLevel.abort);
+		config.vspExperimental().setVspDefaultsCheckingLevel(VspExperimentalConfigGroup.VspDefaultsCheckingLevel.abort);
 
 		config.plansCalcRoute().setAccessEgressType(PlansCalcRouteConfigGroup.AccessEgressType.accessEgressModeToLink);
 		// (yyyy what exactly is this doing?)
@@ -197,6 +201,8 @@ public class RunLeipzigScenario extends MATSimApplication {
 			ConfigUtils.addOrGetModule(config, ParkingCostConfigGroup.class);
 		}
 
+		// config.subtourModeChoice().setBehavior(SubtourModeChoice.Behavior.fromSpecifiedModesToSpecifiedModes);
+
 		return config;
 	}
 
@@ -216,6 +222,45 @@ public class RunLeipzigScenario extends MATSimApplication {
 			}
 		}
 
+		PopulationFactory populationfactory = scenario.getPopulation().getFactory();
+		//	Factory=Methode, um was zu erstellen. Rechtsklick, refactor, introduce variable.
+		Id<Person> id= Id.createPersonId("Vahid");
+		Person vahid = populationfactory.createPerson(id);
+
+		Plan plan = populationfactory.createPlan();
+		vahid.addPlan(plan);
+
+		Coord homeCoord = CoordUtils.createCoord(742598, 5693023);
+		//hier wohnt er
+		Activity homeAct = populationfactory.createActivityFromCoord("home", homeCoord);
+		plan.addActivity(homeAct);
+		//Aktivität Wohnen
+		plan.addActivity(homeAct);
+		homeAct.setEndTime(8*60*60);
+		// 8 Uhr verlässt er das Haus
+
+		Leg leg1 = populationfactory.createLeg(TransportMode.car);
+		plan.addLeg(leg1);
+
+		Coord workCoord = CoordUtils.createCoord(738719, 5690852);
+		//hier arbeite er
+		Activity workAct = populationfactory.createActivityFromCoord("work", workCoord);
+		workAct.setEndTime(17*60*60);
+		// 17 Uhr verlässt er die Arbeit
+		plan.addActivity(workAct);
+		//Aktivität Arbeiten
+
+		Leg leg2 = populationfactory.createLeg(TransportMode.car);
+		plan.addLeg(leg2);
+
+		Activity homeAct2 = populationfactory.createActivityFromCoord("home", homeCoord);
+		plan.addActivity(homeAct2);
+
+		//Population population = scenario.getPopulation();
+		//population.addPerson(vahid);
+
+		scenario.getPopulation().addPerson(vahid);
+
 		if (drt) {
 			scenario.getPopulation().getFactory().getRouteFactories().setRouteFactory(DrtRoute.class, new DrtRouteFactory());
 		}
@@ -225,7 +270,10 @@ public class RunLeipzigScenario extends MATSimApplication {
 		if (tempo30Zone) {
 			SpeedReduction.implementPushMeasuresByModifyingNetworkInArea(scenario.getNetwork(), ShpGeometryUtils.loadPreparedGeometries(IOUtils.resolveFileOrResource(shp.getShapeFile().toString())), relativeSpeedChange);
 		}
+
 	}
+
+
 
 	@Override
 	protected void prepareControler(Controler controler) {
@@ -383,12 +431,13 @@ public class RunLeipzigScenario extends MATSimApplication {
 		modeChoiceConfigGroup.setModes(modes.toArray(new String[0]));
 	}
 
-	@Override
-	protected List<MATSimAppCommand> preparePostProcessing(Path outputFolder, String runId) {
+//	@Override
+//	protected List<MATSimAppCommand> preparePostProcessing(Path outputFolder, String runId) {
 
-		String hbefaFileWarm = "https://svn.vsp.tu-berlin.de/repos/public-svn/3507bb3997e5657ab9da76dbedbb13c9b5991d3e/0e73947443d68f95202b71a156b337f7f71604ae/7eff8f308633df1b8ac4d06d05180dd0c5fdf577.enc";
-		String hbefaFileCold = "https://svn.vsp.tu-berlin.de/repos/public-svn/3507bb3997e5657ab9da76dbedbb13c9b5991d3e/0e73947443d68f95202b71a156b337f7f71604ae/ColdStart_Vehcat_2020_Average_withHGVetc.csv.enc";
+//		String hbefaFileWarm = "https://svn.vsp.tu-berlin.de/repos/public-svn/3507bb3997e5657ab9da76dbedbb13c9b5991d3e/0e73947443d68f95202b71a156b337f7f71604ae/7eff8f308633df1b8ac4d06d05180dd0c5fdf577.enc";
+//		String hbefaFileCold = "https://svn.vsp.tu-berlin.de/repos/public-svn/3507bb3997e5657ab9da76dbedbb13c9b5991d3e/0e73947443d68f95202b71a156b337f7f71604ae/ColdStart_Vehcat_2020_Average_withHGVetc.csv.enc";
+//
+//		return List.of(new RunOfflineAirPollutionAnalysisByVehicleCategory(outputFolder.toString(), runId, hbefaFileWarm, hbefaFileCold, outputFolder.toString()));
 
-		return List.of(new RunOfflineAirPollutionAnalysisByVehicleCategory(outputFolder.toString(), runId, hbefaFileWarm, hbefaFileCold, outputFolder.toString()));
-	}
+//	}
 }
